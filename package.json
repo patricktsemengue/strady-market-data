@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "axios": "^1.11.0",
+    "csv-parse": "^6.1.0",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "swagger-ui-express": "^5.0.1",
+    "yamljs": "^0.3.0"
+  },
+  "scripts": {
+    "start": "node app.js"
+  },
+  "name": "stock-api-service",
+  "version": "1.0.0",
+  "main": "app.js",
+  "keywords": [],
+  "author": "Thecornseed.com",
+  "license": "ISC",
+  "description": ""
+}

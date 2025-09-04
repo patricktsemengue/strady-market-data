@@ -1,0 +1,113 @@
+openapi: 3.0.0
+info:
+  title: Stady Maket Data API
+  description: A simple API to search for stock information from various sources (AMEX, Euronext, NASDAQ, NYSE), and to retrieve Euro currency exchange rates.
+  version: 1.0.0
+
+servers:
+  - url: /
+    
+paths:
+  /search:
+    get:
+      summary: Search for stock records
+      description: Searches for stock data by symbol, name, or ISIN using a wildcard-friendly query. The wildcard symbol is '%'.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: The search query. Use '%' for wildcard matching (e.g., 'AAPL' or 'GOOG%').
+          schema:
+            type: string
+        - name: by
+          in: query
+          required: true
+          description: The field to search by.
+          schema:
+            type: string
+            enum: [symbol, name, isin]
+      responses:
+        '200':
+          description: A list of matching stock records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    source:
+                      type: string
+                      description: The source file of the record (e.g., amex.csv).
+                    data:
+                      type: object
+                      description: The full stock record data.
+                      additionalProperties:
+                        type: string
+        '400':
+          description: Invalid parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: No records found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /rates:
+    get:
+      summary: Get Euro currency exchange rates
+      description: Retrieves the latest exchange rates for various currencies against the Euro, or for a specific currency pair.
+      parameters:
+        - name: symbol
+          in: query
+          required: false
+          description: The currency pair to search for (e.g., EUR_USD). If not provided, all rates are returned.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of matching currency rates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    symbol:
+                      type: string
+                      description: The currency pair symbol (e.g., EUR_USD).
+                    value:
+                      type: number
+                      description: The exchange rate.
+                    date:
+                      type: string
+                      description: The date the rate was last updated.
+        '400':
+          description: Invalid parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Currency rates or a specific symbol not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string

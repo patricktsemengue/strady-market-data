@@ -1,0 +1,2 @@
+euronext_csv=https://live.euronext.com/pd_es/data/stocks/download?mics=dm_all_stock&initialLetter=&fe_type=csv&fe_decimal_separator=.&fe_date_format=m%2Fd%2FY
+euronext=https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html
