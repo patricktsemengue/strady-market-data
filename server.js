@@ -8,7 +8,7 @@ const yaml = require('js-yaml');
 
 const app = express();
 // Use environment variables with fallbacks
-const HOST = process.env.HOST || 'localhost';
+const HOST = process.env.HOST || '0.0.0.0';
 const PORT = process.env.PORT || 3000;
 
 // --- In-Memory Storage ---
