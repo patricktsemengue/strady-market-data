@@ -1,113 +1,99 @@
 openapi: 3.0.0
 info:
-  title: Stady Maket Data API
-  description: A simple API to search for stock information from various sources (AMEX, Euronext, NASDAQ, NYSE), and to retrieve Euro currency exchange rates.
-  version: 1.0.0
-
-servers:
-  - url: /
-    
+  title: 'Strady Market Data API'
+  version: '1.0.0'
+  description: 'API for uploading and searching stock and currency rates data'
+#servers:
+#  - url: 'http://localhost:3000'
 paths:
+  /upload/stocks:
+    post:
+      summary: Uploads a stock data file (euronext.csv or us.csv).
+      description: |-
+        Upload a supported stock data file. Each successful upload overwrites the data for that specific file only.
+        - **For euronext.csv**: Delimiter is ';'. Must contain columns: Name, ISIN, Symbol, Currency, Open Price, last Price.
+        - **For us.csv**: Delimiter is ','. Must contain columns: Symbol, Name, Last Sale.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                stockFile:
+                  type: string
+                  format: binary
+                  description: The euronext.csv or us.csv file to upload.
+      responses:
+        '200':
+          description: File uploaded and processed successfully.
+        '400':
+          description: Bad Request. Incorrect filename or missing required columns for the given file type.
+  /upload/rates:
+    post:
+      summary: Uploads a currency rates file.
+      description: Upload a CSV file named eurofxref.csv with currency rates. Each upload overwrites previous rates data.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                ratesFile:
+                  type: string
+                  format: binary
+                  description: The eurofxref.csv rates file to upload.
+      responses:
+        '200':
+          description: Rates file uploaded and processed successfully.
+        '400':
+          description: Bad Request. Possible reasons - No file uploaded, incorrect filename (must be eurofxref.csv), or missing required columns (Date, USD, CHF, GBP).
   /search:
     get:
-      summary: Search for stock records
-      description: Searches for stock data by symbol, name, or ISIN using a wildcard-friendly query. The wildcard symbol is '%'.
+      summary: Searches for stock data.
+      description: Search by NAME, SYMBOL, or ISIN. The '%' character can be used as a wildcard.
       parameters:
-        - name: query
-          in: query
-          required: true
-          description: The search query. Use '%' for wildcard matching (e.g., 'AAPL' or 'GOOG%').
+        - in: query
+          name: query
           schema:
             type: string
-        - name: by
-          in: query
-          required: true
-          description: The field to search by.
-          schema:
-            type: string
-            enum: [symbol, name, isin]
+          required: false
+          description: The search term. Use % for wildcard matching.
       responses:
         '200':
           description: A list of matching stock records.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    source:
-                      type: string
-                      description: The source file of the record (e.g., amex.csv).
-                    data:
-                      type: object
-                      description: The full stock record data.
-                      additionalProperties:
-                        type: string
-        '400':
-          description: Invalid parameters.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-        '404':
-          description: No records found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-
-  /rates:
+  /search/rates/{pattern}:
     get:
-      summary: Get Euro currency exchange rates
-      description: Retrieves the latest exchange rates for various currencies against the Euro, or for a specific currency pair.
+      summary: Searches for a specific currency rate.
+      description: Searches for a currency rate against the EUR based on a pattern like EUR_USD.
       parameters:
-        - name: symbol
-          in: query
-          required: false
-          description: The currency pair to search for (e.g., EUR_USD). If not provided, all rates are returned.
+        - in: path
+          name: pattern
+          required: true
           schema:
             type: string
+            example: "EUR_USD"
+          description: The currency pair pattern to search for.
       responses:
         '200':
-          description: A list of matching currency rates.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    symbol:
-                      type: string
-                      description: The currency pair symbol (e.g., EUR_USD).
-                    value:
-                      type: number
-                      description: The exchange rate.
-                    date:
-                      type: string
-                      description: The date the rate was last updated.
-        '400':
-          description: Invalid parameters.
+          description: The requested rate was found.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  error:
+                  pair:
                     type: string
+                    example: "EUR_USD"
+                  value:
+                    type: number
+                    example: 1.0673
+                  upload_date:
+                    type: string
+                    format: date-time
+                  datasource_name:
+                    type: string
+                    example: "eurofxref.csv"
         '404':
-          description: Currency rates or a specific symbol not found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
+          description: The requested currency was not found or data has not been uploaded yet.
