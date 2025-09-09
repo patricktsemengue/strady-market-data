@@ -5,6 +5,18 @@ info:
   description: 'API for uploading and searching stock and currency rates data'
 #servers:
 #  - url: 'http://localhost:3000'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API Key for authentication
+
+security:
+  - ApiKeyAuth: []
+
 paths:
   /upload/stocks:
     post:
@@ -97,3 +109,36 @@ paths:
                     example: "eurofxref.csv"
         '404':
           description: The requested currency was not found or data has not been uploaded yet.
+  
+  /refresh/euronext:
+    post:
+      summary: Refresh Euronext Stock Data
+      description: |-
+        Triggers a live download of the latest stock data from the Euronext URL.
+        The server will download the file, unzip it if necessary, save it as `euronext.csv` in the `/data` directory, and refresh the in-memory cache.
+      responses:
+        '200':
+          description: Data successfully downloaded and cache updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  records_loaded:
+                    type: number
+        '500':
+          description: Failed to download or process the file.
+  
+  /refresh/rates:
+    post:
+      summary: Refresh Currency Rates Data
+      description: |-
+        Triggers a live download of the latest currency rates from the ECB URL.
+        The server will download the zip file, unzip it, save it as `eurofxref.csv`, and refresh the in-memory cache.
+      responses:
+        '200':
+          description: Data successfully downloaded and cache updated.
+        '500':
+          description: Failed to download or process the file.
