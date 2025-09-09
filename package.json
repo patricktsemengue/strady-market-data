@@ -1,7 +1,7 @@
 {
   "name": "strady-market-data",
   "version": "2.0.0",
-  "description": "",
+  "description": "API for uploading and searching stock and currency rates data",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,7 +10,13 @@
     "type": "git",
     "url": "git+https://github.com/patricktsemengue/strady-market-data.git"
   },
-  "keywords": [],
+  "keywords": [
+    "api",
+    "stocks",
+    "rates",
+    "express",
+    "nodejs"
+  ],
   "author": "Thecornseed.com",
   "license": "ISC",
   "bugs": {
@@ -26,5 +32,8 @@
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "swagger-ui-express": "^5.0.1"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
