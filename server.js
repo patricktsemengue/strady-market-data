@@ -9,6 +9,7 @@ const yaml = require('js-yaml');
 const axios = require('axios');
 const admZip = require('adm-zip');
 const cron = require('node-cron');
+const logger = require('./logger'); // Import the custom logger
 
 // --- 2. Initialize Express App and Configuration ---
 const app = express();
@@ -22,20 +23,24 @@ let ratesData = {};
 // --- 4. Swagger UI Configuration ---
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yaml', 'utf8'));
 swaggerDocument.servers = [{ url: `http://${HOST}:${PORT}` }];
-// The Swagger UI route is public (no authentication needed)
+// The Swagger UI route is public and must be defined before authentication
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // --- 5. API Key Authentication Middleware ---
 const apiKeyAuth = (req, res, next) => {
+    logger.debug(`Request received for: ${req.method} ${req.originalUrl}`);
     const apiKey = req.header('X-API-Key');
     const validApiKeys = (process.env.VALID_API_KEYS || '').split(',').map(key => key.trim());
 
     if (!apiKey) {
+        logger.warn(`Unauthorized access attempt: API Key missing from ${req.ip}`);
         return res.status(401).send({ message: 'Unauthorized: API Key is missing. Please include it in the "X-API-Key" header.' });
     }
     if (!validApiKeys.includes(apiKey)) {
+        logger.warn(`Forbidden access attempt: Invalid API Key used from ${req.ip}`);
         return res.status(403).send({ message: 'Forbidden: Invalid API Key.' });
     }
+    logger.debug('API Key authentication successful.');
     next();
 };
 
@@ -83,8 +88,11 @@ const processRatesFile = (filePath) => {
 // --- 7. Data Refresh Functions (Download & Process) ---
 const refreshEuronextData = async () => {
     const url = process.env.EURONEXT_DATA_URL;
-    if (!url) { console.error('EURONEXT_DATA_URL not set in .env file.'); return; }
-    console.log('Refreshing Euronext data...');
+    if (!url) {
+        logger.warn('EURONEXT_DATA_URL not set in .env file. Skipping refresh.');
+        return;
+    }
+    logger.info('Refreshing Euronext data...');
     try {
         const finalFilePath = path.join(__dirname, 'data', 'euronext.csv');
         fs.mkdirSync(path.dirname(finalFilePath), { recursive: true });
@@ -100,18 +108,21 @@ const refreshEuronextData = async () => {
         }
         const newStockData = processStockFile('euronext.csv', finalFilePath);
         stockData['euronext.csv'] = newStockData;
-        console.log(`✅ Euronext cache updated with ${newStockData.length} records.`);
+        logger.info(`✅ Euronext cache updated with ${newStockData.length} records.`);
         return { success: true, records_loaded: newStockData.length };
     } catch (error) {
-        console.error('❌ Failed to refresh Euronext data:', error.message);
+        logger.error(`Failed to refresh Euronext data: ${error.message}`);
         throw error;
     }
 };
 
 const refreshRatesData = async () => {
     const url = process.env.EURFX_RATES_URL;
-    if (!url) { console.error('EURFX_RATES_URL not set in .env file.'); return; }
-    console.log('Refreshing currency rates data...');
+    if (!url) {
+        logger.warn('EURFX_RATES_URL not set in .env file. Skipping refresh.');
+        return;
+    }
+    logger.info('Refreshing currency rates data...');
     try {
         const finalFilePath = path.join(__dirname, 'data', 'eurofxref.csv');
         fs.mkdirSync(path.dirname(finalFilePath), { recursive: true });
@@ -121,10 +132,10 @@ const refreshRatesData = async () => {
         if (!csvEntry) throw new Error('No CSV file found in the ECB ZIP archive.');
         fs.writeFileSync(finalFilePath, zip.readAsText(csvEntry));
         ratesData = processRatesFile(finalFilePath);
-        console.log(`✅ Currency rates cache updated with ${Object.keys(ratesData.rates).length} currencies.`);
+        logger.info(`✅ Currency rates cache updated with ${Object.keys(ratesData.rates).length} currencies.`);
         return { success: true, currencies_loaded: Object.keys(ratesData.rates).length };
     } catch (error) {
-        console.error('❌ Failed to refresh currency rates data:', error.message);
+        logger.error(`Failed to refresh currency rates data: ${error.message}`);
         throw error;
     }
 };
@@ -143,28 +154,33 @@ const upload = multer({ storage: storage });
 // --- 9. API Endpoints ---
 app.post('/upload/stocks', upload.single('stockFile'), (req, res) => {
     if (!req.file) return res.status(400).send({ message: 'No file uploaded.' });
+    logger.info(`Processing stock file upload: ${req.file.originalname}`);
     try {
         const { originalname, path: filePath } = req.file;
         const newStockData = processStockFile(originalname, filePath);
         stockData[originalname] = newStockData;
         res.status(200).send({ message: `${originalname} processed successfully.`, records_loaded: newStockData.length });
     } catch (error) {
+        logger.error(`Error processing stock upload ${req.file.originalname}: ${error.message}`);
         res.status(400).send({ message: error.message });
     }
 });
 
 app.post('/upload/rates', upload.single('ratesFile'), (req, res) => {
     if (!req.file) return res.status(400).send({ message: 'No file uploaded.' });
+    logger.info(`Processing rates file upload: ${req.file.originalname}`);
     try {
         ratesData = processRatesFile(req.file.path);
         res.status(200).send({ message: 'Rates file processed successfully.', currencies_loaded: Object.keys(ratesData.rates).length });
     } catch (error) {
+        logger.error(`Error processing rates upload ${req.file.originalname}: ${error.message}`);
         res.status(400).send({ message: error.message });
     }
 });
 
 app.get('/search', (req, res) => {
     const { query } = req.query;
+    logger.debug(`Stock search requested with query: "${query}"`);
     const allStocks = Object.values(stockData).flat();
     if (!query) return res.status(200).json(allStocks);
     const searchQuery = query.replace(/%/g, '.*');
@@ -175,6 +191,7 @@ app.get('/search', (req, res) => {
 
 app.get('/search/rates/:pattern', (req, res) => {
     const { pattern } = req.params;
+    logger.debug(`Rates search requested for pattern: "${pattern}"`);
     const match = pattern.match(/^EUR_(\w{3})$/);
     if (!match) return res.status(400).send({ message: "Invalid pattern. Use format EUR_{CURRENCY}." });
     const currency = match[1];
@@ -183,6 +200,7 @@ app.get('/search/rates/:pattern', (req, res) => {
 });
 
 app.post('/refresh/euronext', async (req, res) => {
+    logger.info('On-demand Euronext refresh triggered via API.');
     try {
         const result = await refreshEuronextData();
         res.status(200).send({ message: 'Successfully refreshed Euronext stock data.', ...result });
@@ -192,6 +210,7 @@ app.post('/refresh/euronext', async (req, res) => {
 });
 
 app.post('/refresh/rates', async (req, res) => {
+    logger.info('On-demand currency rates refresh triggered via API.');
     try {
         const result = await refreshRatesData();
         res.status(200).send({ message: 'Successfully refreshed currency rates data.', ...result });
@@ -202,10 +221,10 @@ app.post('/refresh/rates', async (req, res) => {
 
 // --- 10. Server Startup Logic ---
 const initializeCache = () => {
-    console.log('Attempting to initialize cache from /data directory...');
+    logger.info('Attempting to initialize cache from /data directory...');
     const dataDir = path.join(__dirname, 'data');
     if (!fs.existsSync(dataDir)) {
-        console.log('Data directory not found. Server will start with an empty cache.');
+        logger.warn('Data directory not found. Server will start with an empty cache.');
         return;
     }
     const files = fs.readdirSync(dataDir);
@@ -215,13 +234,13 @@ const initializeCache = () => {
             if (fileName === 'euronext.csv' || fileName === 'us.csv') {
                 const newStockData = processStockFile(fileName, filePath);
                 stockData[fileName] = newStockData;
-                console.log(`✅ Successfully loaded ${newStockData.length} records from ${fileName}.`);
+                logger.info(`✅ Successfully loaded ${newStockData.length} records from ${fileName}.`);
             } else if (fileName === 'eurofxref.csv') {
                 ratesData = processRatesFile(filePath);
-                console.log(`✅ Successfully loaded ${Object.keys(ratesData.rates).length} currencies from ${fileName}.`);
+                logger.info(`✅ Successfully loaded ${Object.keys(ratesData.rates).length} currencies from ${fileName}.`);
             }
         } catch (error) {
-            console.error(`❌ Failed to load or process ${fileName}: ${error.message}`);
+            logger.error(`❌ Failed to load or process ${fileName}: ${error.message}`);
         }
     });
 };
@@ -229,14 +248,20 @@ const initializeCache = () => {
 initializeCache();
 
 // --- 11. Scheduled Jobs (Cron) ---
-// Runs at 2:00 AM Brussels time every day
-cron.schedule('0 2 * * *', refreshEuronextData, { timezone: "Europe/Brussels" });
-// Runs at 3:00 AM Brussels time every day
-cron.schedule('0 3 * * *', refreshRatesData, { timezone: "Europe/Brussels" });
+logger.info('Setting up scheduled jobs...');
+cron.schedule('0 2 * * *', () => {
+    logger.info('Running scheduled job: Refreshing Euronext Data.');
+    refreshEuronextData();
+}, { timezone: "Europe/Brussels" });
+
+cron.schedule('0 3 * * *', () => {
+    logger.info('Running scheduled job: Refreshing Currency Rates Data.');
+    refreshRatesData();
+}, { timezone: "Europe/Brussels" });
 
 // --- 12. Start Server ---
 app.listen(PORT, HOST, () => {
-    console.log(`Server is running on http://${HOST}:${PORT}`);
-    console.log(`API documentation available at http://${HOST}:${PORT}/api-docs`);
-    console.log('Scheduled jobs for daily data refresh are active.');
+    logger.info(`Server is running on http://${HOST}:${PORT}`);
+    logger.info(`API documentation available at http://${HOST}:${PORT}/api-docs`);
+    logger.info('Scheduled jobs for daily data refresh are active.');
 });
