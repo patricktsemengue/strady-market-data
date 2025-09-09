@@ -10,6 +10,8 @@ const admZip = require('adm-zip');
 const cron = require('node-cron');
 
 const app = express();
+<<<<<<< HEAD
+=======
 // Use environment variables with fallbacks
 >>>>>>> de1ff57ed3ec8e980e779d5f5fad8d808e58bf54
 const HOST = process.env.HOST || '0.0.0.0';
