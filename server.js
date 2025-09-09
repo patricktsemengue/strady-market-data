@@ -20,11 +20,16 @@ const PORT = process.env.PORT || 3000;
 let stockData = {};
 let ratesData = {};
 
-// --- 4. Swagger UI Configuration ---
+// --- 4. Swagger UI & Public Routes ---
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yaml', 'utf8'));
 swaggerDocument.servers = [{ url: `http://${HOST}:${PORT}` }];
 // The Swagger UI route is public and must be defined before authentication
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// Public Health Check Endpoint for Render or other services
+app.get('/health', (req, res) => {
+    res.status(200).send({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // --- 5. API Key Authentication Middleware ---
 const apiKeyAuth = (req, res, next) => {
