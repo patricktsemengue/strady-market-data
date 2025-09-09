@@ -22,7 +22,7 @@ let ratesData = {};
 
 // --- 4. Swagger UI & Public Routes ---
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yaml', 'utf8'));
-swaggerDocument.servers = [{ url: `http://${HOST}:${PORT}` }];
+swaggerDocument.servers = [{ url: `/` }];
 // The Swagger UI route is public and must be defined before authentication
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
