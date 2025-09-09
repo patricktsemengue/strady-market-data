@@ -1,3 +1,4 @@
+// --- 1. Load Dependencies ---
 require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
@@ -9,45 +10,39 @@ const axios = require('axios');
 const admZip = require('adm-zip');
 const cron = require('node-cron');
 
+// --- 2. Initialize Express App and Configuration ---
 const app = express();
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = process.env.PORT || 3000;
 
-// --- In-Memory Storage ---
+// --- 3. In-Memory Storage ---
 let stockData = {};
 let ratesData = {};
 
-// --- Swagger Configuration ---
+// --- 4. Swagger UI Configuration ---
 const swaggerDocument = yaml.load(fs.readFileSync('./swagger.yaml', 'utf8'));
 swaggerDocument.servers = [{ url: `http://${HOST}:${PORT}` }];
+// The Swagger UI route is public (no authentication needed)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-// --- API Key Authentication Middleware ---
+// --- 5. API Key Authentication Middleware ---
 const apiKeyAuth = (req, res, next) => {
     const apiKey = req.header('X-API-Key');
-    // Get keys from .env, split by comma, and trim whitespace
     const validApiKeys = (process.env.VALID_API_KEYS || '').split(',').map(key => key.trim());
 
     if (!apiKey) {
         return res.status(401).send({ message: 'Unauthorized: API Key is missing. Please include it in the "X-API-Key" header.' });
     }
-
     if (!validApiKeys.includes(apiKey)) {
         return res.status(403).send({ message: 'Forbidden: Invalid API Key.' });
     }
-
-    // If the key is valid, proceed to the next middleware or route handler
     next();
 };
 
 // Apply the middleware to all routes defined after this line
 app.use(apiKeyAuth);
 
-
-// --- PROTECTED API Endpoints ---
-
-// --- Data Processing, Multer, and other functions (no changes here) ---
-// (processStockFile, processRatesFile, storage configs, etc. remain the same)
+// --- 6. Data Processing Functions ---
 const processStockFile = (fileName, filePath) => {
     const fileContent = fs.readFileSync(filePath, 'utf-8');
     let newStockData = [];
@@ -73,6 +68,7 @@ const processStockFile = (fileName, filePath) => {
     } else { throw new Error(`Unsupported stock file: ${fileName}`); }
     return newStockData;
 };
+
 const processRatesFile = (filePath) => {
     const fileContent = fs.readFileSync(filePath, 'utf-8');
     const lines = fileContent.split('\n').filter(line => line.includes(','));
@@ -83,10 +79,8 @@ const processRatesFile = (filePath) => {
     headers.forEach((header, index) => { if (header && header !== 'Date' && values[index]) newRates[header] = parseFloat(values[index]) });
     return { rates: newRates, upload_date: new Date().toISOString(), datasource_name: 'eurofxref.csv' };
 };
-// ... other functions ...
 
-
-// --- Data Refresh Logic ---
+// --- 7. Data Refresh Functions (Download & Process) ---
 const refreshEuronextData = async () => {
     const url = process.env.EURONEXT_DATA_URL;
     if (!url) { console.error('EURONEXT_DATA_URL not set in .env file.'); return; }
@@ -135,9 +129,58 @@ const refreshRatesData = async () => {
     }
 };
 
-// --- API Endpoints ---
-// (Your existing /upload/stocks, /upload/rates, /search, etc. endpoints)
-// ...
+// --- 8. File Upload Configuration (Multer) ---
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = 'data/';
+        fs.mkdirSync(uploadPath, { recursive: true });
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => { cb(null, file.originalname); }
+});
+const upload = multer({ storage: storage });
+
+// --- 9. API Endpoints ---
+app.post('/upload/stocks', upload.single('stockFile'), (req, res) => {
+    if (!req.file) return res.status(400).send({ message: 'No file uploaded.' });
+    try {
+        const { originalname, path: filePath } = req.file;
+        const newStockData = processStockFile(originalname, filePath);
+        stockData[originalname] = newStockData;
+        res.status(200).send({ message: `${originalname} processed successfully.`, records_loaded: newStockData.length });
+    } catch (error) {
+        res.status(400).send({ message: error.message });
+    }
+});
+
+app.post('/upload/rates', upload.single('ratesFile'), (req, res) => {
+    if (!req.file) return res.status(400).send({ message: 'No file uploaded.' });
+    try {
+        ratesData = processRatesFile(req.file.path);
+        res.status(200).send({ message: 'Rates file processed successfully.', currencies_loaded: Object.keys(ratesData.rates).length });
+    } catch (error) {
+        res.status(400).send({ message: error.message });
+    }
+});
+
+app.get('/search', (req, res) => {
+    const { query } = req.query;
+    const allStocks = Object.values(stockData).flat();
+    if (!query) return res.status(200).json(allStocks);
+    const searchQuery = query.replace(/%/g, '.*');
+    const searchRegex = new RegExp(searchQuery, 'i');
+    const results = allStocks.filter(stock => searchRegex.test(stock.Name) || searchRegex.test(stock.Symbol) || (stock.ISIN && searchRegex.test(stock.ISIN)));
+    res.status(200).json(results);
+});
+
+app.get('/search/rates/:pattern', (req, res) => {
+    const { pattern } = req.params;
+    const match = pattern.match(/^EUR_(\w{3})$/);
+    if (!match) return res.status(400).send({ message: "Invalid pattern. Use format EUR_{CURRENCY}." });
+    const currency = match[1];
+    if (!ratesData.rates || !ratesData.rates[currency]) return res.status(404).send({ message: `Currency '${currency}' not found.` });
+    res.status(200).json({ pair: pattern, value: ratesData.rates[currency], upload_date: ratesData.upload_date, datasource_name: ratesData.datasource_name });
+});
 
 app.post('/refresh/euronext', async (req, res) => {
     try {
@@ -157,22 +200,43 @@ app.post('/refresh/rates', async (req, res) => {
     }
 });
 
-// --- Server Startup Logic ---
+// --- 10. Server Startup Logic ---
 const initializeCache = () => {
-    // ... (no changes to this function)
+    console.log('Attempting to initialize cache from /data directory...');
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+        console.log('Data directory not found. Server will start with an empty cache.');
+        return;
+    }
+    const files = fs.readdirSync(dataDir);
+    files.forEach(fileName => {
+        const filePath = path.join(dataDir, fileName);
+        try {
+            if (fileName === 'euronext.csv' || fileName === 'us.csv') {
+                const newStockData = processStockFile(fileName, filePath);
+                stockData[fileName] = newStockData;
+                console.log(`✅ Successfully loaded ${newStockData.length} records from ${fileName}.`);
+            } else if (fileName === 'eurofxref.csv') {
+                ratesData = processRatesFile(filePath);
+                console.log(`✅ Successfully loaded ${Object.keys(ratesData.rates).length} currencies from ${fileName}.`);
+            }
+        } catch (error) {
+            console.error(`❌ Failed to load or process ${fileName}: ${error.message}`);
+        }
+    });
 };
 
 initializeCache();
 
-// --- Scheduled Jobs ---
-// Runs at 2:00 AM every day
+// --- 11. Scheduled Jobs (Cron) ---
+// Runs at 2:00 AM Brussels time every day
 cron.schedule('0 2 * * *', refreshEuronextData, { timezone: "Europe/Brussels" });
-// Runs at 3:00 AM every day
+// Runs at 3:00 AM Brussels time every day
 cron.schedule('0 3 * * *', refreshRatesData, { timezone: "Europe/Brussels" });
 
-// --- Start Server ---
+// --- 12. Start Server ---
 app.listen(PORT, HOST, () => {
     console.log(`Server is running on http://${HOST}:${PORT}`);
     console.log(`API documentation available at http://${HOST}:${PORT}/api-docs`);
-    console.log('Scheduled jobs for data refresh are active.');
+    console.log('Scheduled jobs for daily data refresh are active.');
 });
