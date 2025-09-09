@@ -254,12 +254,12 @@ initializeCache();
 
 // --- 11. Scheduled Jobs (Cron) ---
 logger.info('Setting up scheduled jobs...');
-cron.schedule('0 2 * * *', () => {
+cron.schedule(process.env.CRON_SCHEDULE_STOCKS, () => {
     logger.info('Running scheduled job: Refreshing Euronext Data.');
     refreshEuronextData();
 }, { timezone: "Europe/Brussels" });
 
-cron.schedule('0 3 * * *', () => {
+cron.schedule(process.env.CRON_SCHEDULE_RATES, () => {
     logger.info('Running scheduled job: Refreshing Currency Rates Data.');
     refreshRatesData();
 }, { timezone: "Europe/Brussels" });
